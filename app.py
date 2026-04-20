@@ -131,8 +131,7 @@ def train_and_save_models(df):
         sentiment_model = LogisticRegression(
             max_iter=1000,
             random_state=42,
-            multi_class='multinomial',
-            solver='lbfgs'
+            multi_class='auto'
         )
         sentiment_model.fit(X_train, y_train)
         

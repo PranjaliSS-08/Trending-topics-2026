@@ -125,8 +125,7 @@ def train_sentiment_model(X, y_sentiment):
     model = LogisticRegression(
         max_iter=1000,
         random_state=42,
-        multi_class='multinomial',
-        solver='lbfgs'
+        multi_class='auto'
     )
     
     model.fit(X_train, y_train)
