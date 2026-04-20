@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 from collections import Counter
-import nltk
+import re
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -378,33 +378,36 @@ def page_trend_analytics():
             ax.axis('off')
             st.pyplot(fig, use_container_width=True)
         else:
-            # Fallback: Top words frequency bar chart
-            from nltk.tokenize import word_tokenize
-            from nltk.corpus import stopwords
+            # Fallback: Top words frequency bar chart (no NLTK required)
+            # Simple stopwords list
+            stop_words = {
+                'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+                'is', 'are', 'am', 'be', 'been', 'being', 'have', 'has', 'had', 'do',
+                'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might',
+                'of', 'from', 'by', 'with', 'as', 'that', 'this', 'it', 'its', 'about',
+                'which', 'who', 'whom', 'where', 'when', 'why', 'how', 'all', 'each',
+                'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such', 'no',
+                'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'can'
+            }
             
-            try:
-                nltk.data.find('tokenizers/punkt')
-            except LookupError:
-                nltk.download('punkt', quiet=True)
+            # Extract words using regex (simple tokenization)
+            words = re.findall(r'\b[a-z]+\b', all_text.lower())
+            # Filter: remove stopwords and short words
+            words = [w for w in words if len(w) > 3 and w not in stop_words]
             
-            try:
-                nltk.data.find('corpora/stopwords')
-            except LookupError:
-                nltk.download('stopwords', quiet=True)
-            
-            words = word_tokenize(all_text.lower())
-            stop_words = set(stopwords.words('english'))
-            words = [w for w in words if w.isalpha() and len(w) > 3 and w not in stop_words]
-            
+            # Get top 15 words
             word_freq = Counter(words).most_common(15)
             
-            fig, ax = plt.subplots(figsize=(8, 6))
-            words_list, freqs = zip(*word_freq)
-            ax.barh(words_list, freqs, color='viridis')
-            ax.set_xlabel('Frequency', fontsize=11, weight='bold')
-            ax.set_title('Top 15 Trending Words', fontsize=14, weight='bold', pad=20)
-            ax.invert_yaxis()
-            st.pyplot(fig, use_container_width=True)
+            if word_freq:
+                fig, ax = plt.subplots(figsize=(8, 6))
+                words_list, freqs = zip(*word_freq)
+                ax.barh(words_list, freqs, color='viridis')
+                ax.set_xlabel('Frequency', fontsize=11, weight='bold')
+                ax.set_title('Top 15 Trending Words', fontsize=14, weight='bold', pad=20)
+                ax.invert_yaxis()
+                st.pyplot(fig, use_container_width=True)
+            else:
+                st.info("Not enough words to display word frequency chart.")
     
     st.markdown("---")
     
