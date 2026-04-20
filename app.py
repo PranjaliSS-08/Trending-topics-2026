@@ -128,11 +128,7 @@ def train_and_save_models(df):
             X, data['sentiment_encoded'], test_size=0.2, random_state=42
         )
         
-        sentiment_model = LogisticRegression(
-            max_iter=1000,
-            random_state=42,
-            multi_class='auto'
-        )
+        sentiment_model = LogisticRegression(max_iter=1000, random_state=42)
         sentiment_model.fit(X_train, y_train)
         
         # Save models
