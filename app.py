@@ -83,6 +83,7 @@ def train_and_save_models(df):
     from sklearn.linear_model import LogisticRegression
     from sklearn.preprocessing import LabelEncoder
     from sklearn.model_selection import train_test_split
+    from imblearn.over_sampling import SMOTE
     
     with st.spinner("🤖 Training ML models on first run (this takes ~30 seconds)..."):
         # Preprocess data
@@ -115,21 +116,49 @@ def train_and_save_models(df):
         )
         
         engagement_model = RandomForestRegressor(
-            n_estimators=100,
-            max_depth=15,
-            min_samples_split=5,
+            n_estimators=10,
+            max_depth=3,
+            min_samples_split=2,
+            min_samples_leaf=1,
             random_state=42,
             n_jobs=-1
         )
         engagement_model.fit(X_train, y_train)
         
-        # Train sentiment model
+        # Train sentiment model with balanced class weights
+        # ===================================================================
+        # WHY class_weight='balanced'?
+        # 
+        # Without it: Model predicts only "Positive" (the majority class)
+        # because it achieves high accuracy by ignoring minority classes.
+        #
+        # With it: class_weight='balanced' automatically adjusts weights
+        # inversely proportional to class frequencies:
+        # - Minority classes (Negative, Neutral) get HIGHER penalties
+        # - Majority class (Positive) gets LOWER penalty
+        # - Forces model to learn all classes equally well
+        #
+        # Formula: weight = total_samples / (n_classes * class_samples)
+        # ===================================================================
         X_train, X_test, y_train, y_test = train_test_split(
             X, data['sentiment_encoded'], test_size=0.2, random_state=42
         )
         
-        sentiment_model = LogisticRegression(max_iter=1000, random_state=42)
-        sentiment_model.fit(X_train, y_train)
+        # Apply SMOTE to training data only (prevents data leakage)
+        # SMOTE creates synthetic samples to balance minority classes
+        smote = SMOTE(k_neighbors=3, random_state=42)
+        X_train_smote, y_train_smote = smote.fit_resample(X_train, y_train)
+        
+        print(f"   Training data balanced via SMOTE: {len(y_train)} → {len(y_train_smote)} samples")
+        
+        # LogisticRegression with balanced class weights ensures
+        # the model predicts Positive, Negative, AND Neutral
+        sentiment_model = LogisticRegression(
+            max_iter=1000, 
+            random_state=42, 
+            class_weight='balanced'  # ← CRITICAL for handling imbalance!
+        )
+        sentiment_model.fit(X_train_smote, y_train_smote)
         
         # Save models
         models_dict = {
@@ -335,10 +364,9 @@ def page_home():
     st.subheader("🎯 How to Use")
     st.write("""
     1. **Navigate** using the sidebar menu
-    2. **Explore Trends** on the Trend Analytics page
-    3. **Enter Headlines** on the Real-time Forecasting page
-    4. **Get Predictions** for engagement score and sentiment
-    5. **Understand Results** using the provided explanations
+    2. **Enter Headlines** on the Real-time Forecasting page
+    3. **Get Predictions** for engagement score and sentiment
+    4. **Understand Results** using the provided explanations
     """)
     
     st.markdown("---")
@@ -347,194 +375,6 @@ def page_home():
     💡 **Tip**: High engagement scores suggest topics likely to go viral across platforms.
     Use this app to understand what makes news trending and predict future trends!
     """)
-
-
-# ============================================================================
-# PAGE: TREND ANALYTICS (EDA)
-# ============================================================================
-
-def page_trend_analytics():
-    """Trend Analytics page with visualizations."""
-    st.title("📊 Trend Analytics - 2026 Global Insights")
-    st.markdown("---")
-    
-    df = load_dataset()
-    
-    # Key Metrics
-    st.subheader("📈 Key Metrics")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    col1.metric("Avg Engagement", f"{df['engagement_score'].mean():.1f}/100")
-    col2.metric("Max Engagement", f"{df['engagement_score'].max():.0f}/100")
-    col3.metric("Min Engagement", f"{df['engagement_score'].min():.0f}/100")
-    col4.metric("Total Headlines", len(df))
-    
-    st.markdown("---")
-    
-    # Row 1: Sentiment Distribution & Platform Analytics
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.subheader("🎭 Sentiment Distribution (Global Feb 2026)")
-        sentiment_counts = df['sentiment'].value_counts()
-        
-        fig, ax = plt.subplots(figsize=(8, 6))
-        colors = ['#2ecc71', '#95a5a6', '#e74c3c']
-        wedges, texts, autotexts = ax.pie(
-            sentiment_counts.values,
-            labels=sentiment_counts.index,
-            autopct='%1.1f%%',
-            colors=colors,
-            startangle=90,
-            textprops={'fontsize': 12, 'weight': 'bold'}
-        )
-        
-        # Make percentage text white
-        for autotext in autotexts:
-            autotext.set_color('white')
-        
-        ax.set_title('Global Sentiment Mood', fontsize=14, weight='bold', pad=20)
-        st.pyplot(fig, use_container_width=True)
-    
-    with col2:
-        st.subheader("📱 Average Engagement Score per Platform")
-        platform_engagement = df.groupby('platform')['engagement_score'].mean().sort_values(ascending=False)
-        
-        fig, ax = plt.subplots(figsize=(8, 6))
-        bars = ax.bar(platform_engagement.index, platform_engagement.values, color=['#3498db', '#e74c3c', '#2ecc71'])
-        ax.set_ylabel('Average Engagement Score', fontsize=11, weight='bold')
-        ax.set_xlabel('Platform', fontsize=11, weight='bold')
-        ax.set_title('Engagement Score by Platform', fontsize=14, weight='bold', pad=20)
-        ax.set_ylim([0, 100])
-        
-        # Add value labels on bars
-        for bar in bars:
-            height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{height:.1f}', ha='center', va='bottom', fontweight='bold')
-        
-        st.pyplot(fig, use_container_width=True)
-    
-    st.markdown("---")
-    
-    # Row 2: Region Analytics & Word Cloud
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.subheader("🌍 Engagement Score Distribution by Region")
-        region_data = df.groupby('region')['engagement_score'].agg(['mean', 'count']).sort_values('mean', ascending=False)
-        
-        fig, ax = plt.subplots(figsize=(8, 6))
-        bars = ax.barh(region_data.index, region_data['mean'], color=['#9b59b6', '#f39c12', '#1abc9c'])
-        ax.set_xlabel('Average Engagement Score', fontsize=11, weight='bold')
-        ax.set_title('Average Engagement by Region', fontsize=14, weight='bold', pad=20)
-        ax.set_xlim([0, 100])
-        
-        # Add value labels
-        for i, (idx, row) in enumerate(region_data.iterrows()):
-            ax.text(row['mean'], i, f"{row['mean']:.1f}", va='center', ha='left', fontweight='bold')
-        
-        st.pyplot(fig, use_container_width=True)
-    
-    with col2:
-        st.subheader("☁️ Word Cloud of Top Trending Terms")
-        # Combine all headlines for word cloud
-        all_text = ' '.join(df['headline'].astype(str))
-        
-        if WORDCLOUD_AVAILABLE:
-            wordcloud = WordCloud(
-                width=800, height=400,
-                background_color='white',
-                colormap='viridis',
-                max_words=100
-            ).generate(all_text)
-            
-            fig, ax = plt.subplots(figsize=(8, 6))
-            ax.imshow(wordcloud, interpolation='bilinear')
-            ax.axis('off')
-            st.pyplot(fig, use_container_width=True)
-        else:
-            # Fallback: Top words frequency bar chart (no NLTK required)
-            # Simple stopwords list
-            stop_words = {
-                'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-                'is', 'are', 'am', 'be', 'been', 'being', 'have', 'has', 'had', 'do',
-                'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might',
-                'of', 'from', 'by', 'with', 'as', 'that', 'this', 'it', 'its', 'about',
-                'which', 'who', 'whom', 'where', 'when', 'why', 'how', 'all', 'each',
-                'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such', 'no',
-                'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'can'
-            }
-            
-            # Extract words using regex (simple tokenization)
-            words = re.findall(r'\b[a-z]+\b', all_text.lower())
-            # Filter: remove stopwords and short words
-            words = [w for w in words if len(w) > 3 and w not in stop_words]
-            
-            # Get top 15 words
-            word_freq = Counter(words).most_common(15)
-            
-            if word_freq:
-                fig, ax = plt.subplots(figsize=(8, 6))
-                words_list, freqs = zip(*word_freq)
-                colors = plt.cm.viridis(np.linspace(0, 1, len(words_list)))
-                ax.barh(words_list, freqs, color=colors)
-                ax.set_xlabel('Frequency', fontsize=11, weight='bold')
-                ax.set_title('Top 15 Trending Words', fontsize=14, weight='bold', pad=20)
-                ax.invert_yaxis()
-                st.pyplot(fig, use_container_width=True)
-            else:
-                st.info("Not enough words to display word frequency chart.")
-    
-    st.markdown("---")
-    
-    # Row 3: Sentiment by Platform & Region Heatmap
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.subheader("🎭 Sentiment Breakdown by Platform")
-        sentiment_platform = pd.crosstab(df['platform'], df['sentiment'])
-        
-        fig, ax = plt.subplots(figsize=(8, 6))
-        sentiment_platform.plot(kind='bar', ax=ax, color=['#e74c3c', '#95a5a6', '#2ecc71'])
-        ax.set_title('Sentiment Distribution by Platform', fontsize=14, weight='bold', pad=20)
-        ax.set_xlabel('Platform', fontsize=11, weight='bold')
-        ax.set_ylabel('Count', fontsize=11, weight='bold')
-        ax.legend(title='Sentiment', fontsize=10)
-        plt.xticks(rotation=45)
-        st.pyplot(fig, use_container_width=True)
-    
-    with col2:
-        st.subheader("📊 Engagement Distribution")
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.hist(df['engagement_score'], bins=20, color='#3498db', edgecolor='black', alpha=0.7)
-        ax.axvline(df['engagement_score'].mean(), color='red', linestyle='--', linewidth=2, label=f'Mean: {df["engagement_score"].mean():.1f}')
-        ax.set_xlabel('Engagement Score', fontsize=11, weight='bold')
-        ax.set_ylabel('Frequency', fontsize=11, weight='bold')
-        ax.set_title('Distribution of Engagement Scores', fontsize=14, weight='bold', pad=20)
-        ax.legend()
-        st.pyplot(fig, use_container_width=True)
-    
-    st.markdown("---")
-    
-    # Data Table
-    st.subheader("📋 Dataset Preview")
-    if st.checkbox("Show raw data"):
-        st.dataframe(df.head(20), use_container_width=True)
-    
-    # Summary Statistics
-    st.subheader("📊 Summary Statistics")
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.write("**Engagement Score Statistics**")
-        st.write(df['engagement_score'].describe().round(2))
-    
-    with col2:
-        st.write("**Platform & Region Breakdown**")
-        st.write(f"Platforms: {', '.join(df['platform'].unique())}")
-        st.write(f"Regions: {', '.join(df['region'].unique())}")
-        st.write(f"Sentiments: {', '.join(df['sentiment'].unique())}")
 
 
 # ============================================================================
@@ -784,7 +624,7 @@ def main():
     st.sidebar.markdown("## 🚀 Navigation")
     page = st.sidebar.radio(
         "Select a page:",
-        ["🏠 Home", "📊 Trend Analytics", "🔮 Real-time Forecasting"],
+        ["🏠 Home", "🔮 Real-time Forecasting"],
         label_visibility="collapsed"
     )
     
@@ -814,8 +654,6 @@ def main():
     # Route to Pages
     if "🏠 Home" in page:
         page_home()
-    elif "📊 Trend Analytics" in page:
-        page_trend_analytics()
     elif "🔮 Real-time Forecasting" in page:
         page_forecasting()
 
